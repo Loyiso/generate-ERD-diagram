@@ -178,7 +178,133 @@ The page renders the Mermaid diagram inline with:
 python generate_erd.py --conn "<ADO.NET connection string>" --out docs/erd.mermaid
 ```
 
-Queries `INFORMATION_SCHEMA.COLUMNS` and `INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS` from the `dbo` schema. Converts the ADO.NET connection string to ODBC format (handles `True`/`False` → `yes`/`no` for the ODBC driver).
+This is the core script. It goes through four phases:
+
+---
+
+#### Phase 1 — Connection String Conversion (`ado_to_odbc`)
+
+The pipeline passes the connection string straight from the ADO.NET format stored in the variable group. `pyodbc` uses ODBC format, which has different keyword names and different boolean values, so the script converts it before connecting.
+
+The keyword mapping:
+
+| ADO.NET keyword | ODBC keyword |
+|---|---|
+| `Server` / `Data Source` | `SERVER` |
+| `Initial Catalog` / `Database` | `DATABASE` |
+| `User ID` | `UID` |
+| `Password` | `PWD` |
+| `Encrypt` | `Encrypt` |
+| `TrustServerCertificate` | `TrustServerCertificate` |
+| `Connection Timeout` | `Connection Timeout` |
+| `MultipleActiveResultSets` | _(dropped — not supported by ODBC)_ |
+| `Persist Security Info` | _(dropped)_ |
+
+Boolean values are also translated: `True` → `yes`, `False` → `no`. ODBC Driver 18 rejects `True`/`False` and throws `Invalid value specified for connection string attribute 'Encrypt'` if they are not converted.
+
+`DRIVER={ODBC Driver 18 for SQL Server}` is prepended automatically — you never need to include it in the connection string.
+
+**Example — input ADO.NET string:**
+```
+Server=tcp:mfs-sqlserver.database.windows.net,1433;Initial Catalog=ProductOrder;
+User ID=productorder_erd;Password=secret;Encrypt=True;TrustServerCertificate=False;
+Connection Timeout=30;MultipleActiveResultSets=False;
+```
+
+**After conversion to ODBC:**
+```
+DRIVER={ODBC Driver 18 for SQL Server};SERVER=tcp:mfs-sqlserver.database.windows.net,1433;
+DATABASE=ProductOrder;UID=productorder_erd;PWD=secret;Encrypt=yes;
+TrustServerCertificate=no;Connection Timeout=30
+```
+
+---
+
+#### Phase 2 — Fetching Table & Column Metadata (`fetch_tables`)
+
+Opens a connection with `pyodbc.connect()` and runs this query:
+
+```sql
+SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE
+FROM   INFORMATION_SCHEMA.COLUMNS
+WHERE  TABLE_SCHEMA = 'dbo'
+ORDER  BY TABLE_NAME, ORDINAL_POSITION
+```
+
+`INFORMATION_SCHEMA.COLUMNS` is a read-only standard SQL view — no elevated permissions required, only `db_datareader` membership.
+
+- `TABLE_SCHEMA = 'dbo'` filters out system tables and any tables in non-default schemas.
+- `ORDER BY TABLE_NAME, ORDINAL_POSITION` ensures columns appear in the same order they were defined — important for the diagram to be readable.
+
+The result is grouped into a dictionary: `{ "Orders": [("Id", "uniqueidentifier", False), ("CustomerId", "uniqueidentifier", False), ...], ... }`
+
+---
+
+#### Phase 3 — Fetching Foreign Key Relationships (`fetch_fks`)
+
+Runs a second query on `INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS` joined to `INFORMATION_SCHEMA.KEY_COLUMN_USAGE`:
+
+```sql
+SELECT
+    kcu1.TABLE_NAME  AS FK_TABLE,
+    kcu1.COLUMN_NAME AS FK_COLUMN,
+    kcu2.TABLE_NAME  AS PK_TABLE,
+    kcu2.COLUMN_NAME AS PK_COLUMN
+FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc
+JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu1
+    ON  kcu1.CONSTRAINT_NAME  = rc.CONSTRAINT_NAME
+JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu2
+    ON  kcu2.CONSTRAINT_NAME  = rc.UNIQUE_CONSTRAINT_NAME
+    AND kcu2.ORDINAL_POSITION = kcu1.ORDINAL_POSITION
+ORDER BY FK_TABLE, FK_COLUMN
+```
+
+`REFERENTIAL_CONSTRAINTS` holds the FK-to-PK constraint link but only by constraint name — not by column. The two `KEY_COLUMN_USAGE` joins resolve the actual column names on both sides. The `ORDINAL_POSITION` join handles composite foreign keys (where a FK spans multiple columns) correctly by matching columns in declaration order.
+
+This gives rows like:
+```
+FK_TABLE     FK_COLUMN    PK_TABLE   PK_COLUMN
+-----------  -----------  ---------  ---------
+OrderItems   OrderId      Orders     Id
+OrderItems   ProductId    Products   Id
+Orders       CustomerId   Customers  Id
+```
+
+---
+
+#### Phase 4 — Building the Mermaid Output (`build_mermaid`)
+
+Assembles the `erDiagram` block in two passes:
+
+**Pass 1 — Entity blocks.** Iterates tables alphabetically. For each table, writes an entity block with every column. Nullable columns get a `"nullable"` comment (in quotes — Mermaid's ERD parser only accepts `PK`, `FK`, `UK` as unquoted keywords; anything else must be quoted):
+
+```
+erDiagram
+    Customers {
+        uniqueidentifier Id
+        nvarchar FirstName
+        nvarchar LastName
+        nvarchar Email
+        datetime2 CreatedAt
+    }
+    Orders {
+        uniqueidentifier Id
+        uniqueidentifier CustomerId
+        nvarchar Status
+        datetime2 PlacedAt
+    }
+    ...
+```
+
+**Pass 2 — Relationships.** For each FK row, writes a relationship line. The PK table is always on the left (the "one" side), the FK table on the right (the "many" side). The cardinality notation `||--o{` means "exactly one to zero or many":
+
+```
+    Customers ||--o{ Orders : "CustomerId"
+    Orders ||--o{ OrderItems : "OrderId"
+    Products ||--o{ OrderItems : "ProductId"
+```
+
+The final file is written as UTF-8 plain text. Azure DevOps wiki renders Mermaid `erDiagram` blocks natively — no plugins needed.
 
 ### `scripts/build_wiki_page.py`
 
