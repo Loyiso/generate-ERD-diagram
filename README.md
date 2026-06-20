@@ -1,4 +1,4 @@
-# Generate ERD Pipeline
+# Generate ERD Diagram
 
 Automatically generates a Mermaid Entity Relationship Diagram from the live **ProductOrder** Azure SQL schema and publishes it to the Azure DevOps project wiki at `Database/ERD`.
 
