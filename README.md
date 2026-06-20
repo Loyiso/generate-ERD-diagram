@@ -53,7 +53,8 @@ Create a variable group named **`productorder-erd-secrets`** in **Pipelines → 
 
 > **Screenshot — Variable group configured in ADO Library:**
 >
-> ![Variable group](../screenshots/erd-variable-group.png)
+> ![Variable group](<img width="1816" height="988" alt="image" src="https://github.com/user-attachments/assets/a44bbe75-15d3-4e21-b172-da9b06a9e6c6" />
+)
 > _Pipelines → Library → productorder-erd-secrets_
 
 ---
