@@ -1,0 +1,86 @@
+# azure-pipelines.yml
+# CI build pipeline for ProductOrder.Api (.NET 9)
+# Triggers on pushes to main and on all pull requests targeting main.
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    exclude:
+      - '**/*.md'
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  buildConfiguration: Release
+  dotnetVersion: '9.x'
+  projectPath: 'ProductOrder.Api.csproj'
+
+stages:
+
+  # ── Stage 1: Build & Test ────────────────────────────────────────────────────
+  - stage: Build
+    displayName: Build & Test
+    jobs:
+      - job: BuildJob
+        displayName: Build, Test & Publish
+        steps:
+
+          - task: UseDotNet@2
+            displayName: Use .NET $(dotnetVersion)
+            inputs:
+              version: $(dotnetVersion)
+              includePreviewVersions: false
+
+          - task: DotNetCoreCLI@2
+            displayName: Restore
+            inputs:
+              command: restore
+              projects: $(projectPath)
+
+          - task: DotNetCoreCLI@2
+            displayName: Build
+            inputs:
+              command: build
+              projects: $(projectPath)
+              arguments: >
+                --configuration $(buildConfiguration)
+                --no-restore
+
+          - task: DotNetCoreCLI@2
+            displayName: Test
+            inputs:
+              command: test
+              projects: '**/*.Tests.csproj'
+              arguments: >
+                --configuration $(buildConfiguration)
+                --no-build
+                --collect:"XPlat Code Coverage"
+                --logger trx
+              publishTestResults: true
+            continueOnError: false
+
+          - task: DotNetCoreCLI@2
+            displayName: Publish
+            inputs:
+              command: publish
+              projects: $(projectPath)
+              arguments: >
+                --configuration $(buildConfiguration)
+                --no-build
+                --output $(Build.ArtifactStagingDirectory)/app
+              zipAfterPublish: true
+              modifyOutputPath: false
+
+          - task: PublishBuildArtifacts@1
+            displayName: Upload artifact
+            inputs:
+              pathToPublish: $(Build.ArtifactStagingDirectory)/app
+              artifactName: drop

@@ -1,0 +1,78 @@
+# azure-pipelines-erd.yml
+# ProductOrder — ERD Report Pipeline
+#
+# Run manually: Azure DevOps → Pipelines → Generate ERD → Run pipeline
+# Generates docs/erd.mermaid from the live Azure SQL schema, publishes
+# it as a pipeline artifact, and updates the wiki page "Database/ERD".
+#
+# Required variable group: productorder-erd-secrets
+#   ASPNETCORE_ConnectionStrings__DefaultConnection  (secret) — full ADO.NET connection string
+#   WIKI_PAT                                         (secret) — PAT with Wiki Read & Write scope
+#
+# One-time setup:
+#   Pipeline → Edit → ··· → Triggers → enable "Allow scripts to access the OAuth token"
+
+trigger: none
+pr:     none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  - group: productorder-erd-secrets
+
+stages:
+  - stage: ERD
+    displayName: Generate ERD Report
+    jobs:
+      - job: GenerateERD
+        displayName: Generate Mermaid ERD from live DB
+        steps:
+
+          - task: UsePythonVersion@0
+            displayName: Use Python 3
+            inputs:
+              versionSpec: '3.x'
+
+          - script: |
+              pip install pyodbc requests --break-system-packages 2>/dev/null \
+                || pip install pyodbc requests
+            displayName: Install Python packages
+
+          - script: |
+              curl -sSL https://packages.microsoft.com/keys/microsoft.asc \
+                | sudo apt-key add -
+              curl -sSL https://packages.microsoft.com/config/ubuntu/22.04/prod.list \
+                | sudo tee /etc/apt/sources.list.d/mssql-release.list
+              sudo apt-get update -q
+              ACCEPT_EULA=Y sudo apt-get install -y msodbcsql18 unixodbc-dev
+            displayName: Install ODBC Driver 18 for SQL Server
+
+          - script: |
+              mkdir -p docs
+              python scripts/generate_erd.py \
+                --conn "$(ASPNETCORE_ConnectionStrings__DefaultConnection)" \
+                --out  docs/erd.mermaid
+            displayName: Generate ERD from Azure SQL
+
+          - task: PublishPipelineArtifact@1
+            displayName: Publish ERD artifact
+            inputs:
+              targetPath: docs/erd.mermaid
+              artifact: database-erd
+              publishLocation: pipeline
+
+          - script: |
+              set -e
+              python3 scripts/build_wiki_page.py \
+                --mermaid  docs/erd.mermaid \
+                --build-id "$(Build.BuildId)" \
+                --out      /tmp/wiki-page.md
+
+              python3 scripts/publish_wiki.py \
+                --org-url   "$(System.TeamFoundationCollectionUri)" \
+                --project   "$(System.TeamProject)" \
+                --page-path "/Database/ERD" \
+                --content   /tmp/wiki-page.md \
+                --token     "$(WIKI_PAT)"
+            displayName: Publish ERD to wiki (Database/ERD)
