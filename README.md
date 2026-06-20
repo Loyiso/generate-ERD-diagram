@@ -53,8 +53,7 @@ Create a variable group named **`productorder-erd-secrets`** in **Pipelines → 
 
 > **Screenshot — Variable group configured in ADO Library:**
 >
-> ![Variable group](<img width="1816" height="988" alt="image" src="https://github.com/user-attachments/assets/a44bbe75-15d3-4e21-b172-da9b06a9e6c6" />
-)
+> ![Variable group](variablegroups.png)
 > _Pipelines → Library → productorder-erd-secrets_
 
 ---
@@ -89,7 +88,7 @@ ALTER ROLE db_datareader ADD MEMBER productorder_erd;
 
 > **Screenshot — PAT token creation:**
 >
-> ![PAT token setup](../screenshots/erd-pat-token.png)
+> ![PAT token setup](pattoken.png)
 > _User Settings → Personal Access Tokens → New Token_
 
 ---
@@ -103,11 +102,6 @@ ALTER ROLE db_datareader ADD MEMBER productorder_erd;
 5. Set path to `/azure-pipelines-erd.yml`
 6. Click **Save** (do not run yet)
 
-> **Screenshot — Pipeline registered in Azure DevOps:**
->
-> ![Pipeline registered](../screenshots/erd-pipeline-registered.png)
-> _Pipelines list showing the Generate ERD pipeline_
-
 ---
 
 ### 5. Authorize the Variable Group
@@ -120,10 +114,6 @@ Before the pipeline can run, it must be authorised to access the variable group.
 
 Or pre-authorise it via **Library → productorder-erd-secrets → Pipeline permissions → +** and select the pipeline.
 
-> **Screenshot — Variable group pipeline permissions:**
->
-> ![Pipeline permissions](../screenshots/erd-pipeline-permissions.png)
-> _Library → productorder-erd-secrets → Pipeline permissions_
 
 ---
 
@@ -134,10 +124,6 @@ Or pre-authorise it via **Library → productorder-erd-secrets → Pipeline perm
 3. Select branch `main`
 4. Click **Run**
 
-> **Screenshot — Run pipeline dialog:**
->
-> ![Run pipeline](../screenshots/erd-run-pipeline.png)
-> _Pipelines → Generate ERD → Run pipeline_
 
 The pipeline has four steps:
 
@@ -148,10 +134,7 @@ The pipeline has four steps:
 | Generate ERD from Azure SQL | Connects to DB, queries schema, writes `erd.mermaid` |
 | Publish ERD to wiki | Calls ADO REST API to create/update `Database/ERD` wiki page |
 
-> **Screenshot — Successful pipeline run:**
->
-> ![Pipeline run success](../screenshots/erd-pipeline-success.png)
-> _All steps green — artifact uploaded and wiki page updated_
+
 
 ---
 
@@ -166,7 +149,7 @@ The page renders the Mermaid diagram inline with:
 
 > **Screenshot — ERD wiki page:**
 >
-> ![ERD wiki page](../screenshots/erd-wiki-page.png)
+> ![ERD wiki page](result.png)
 > _Wiki → Database → ERD — auto-generated diagram_
 
 ---
